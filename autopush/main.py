@@ -23,6 +23,8 @@ from autopush.websocket import (
 
 
 def add_shared_args(parser):
+    parser.add_agument('-c', '--config', is_config_file=True,
+                       help='Configuration file path')
     parser.add_argument('--debug', help='Debug Info.', action='store_true',
                         default=False, env_var="DEBUG")
     parser.add_argument('--crypto_key', help="Crypto key for tokens", type=str,
@@ -45,7 +47,10 @@ def _parse_connection(sysargs=None):
         sysargs = sys.argv[1:]
 
     parser = configargparse.ArgumentParser(
-        description='Runs a Connection Node.')
+        description='Runs a Connection Node.',
+        default_config_files=['/etc/autopush_connection.ini',
+                              '~/.autopush_connection.ini',
+                              '.autopush_connection.ini'])
     parser.add_argument('-p', '--port', help='Websocket Port', type=int,
                         default=8080, env_var="PORT")
     parser.add_argument('--router_hostname',
@@ -70,7 +75,10 @@ def _parse_endpoint(sysargs=None):
         sysargs = sys.argv[1:]
 
     parser = configargparse.ArgumentParser(
-        description='Runs an Endpoint Node.')
+        description='Runs an Endpoint Node.',
+        default_config_files=['/etc/autopush_endpoint.ini',
+                              '~/.autopush_endpoint.ini',
+                              '.autopush_endpoint.ini'])
     parser.add_argument('-p', '--port', help='Public HTTP Endpoint Port',
                         type=int, default=8082, env_var="PORT")
     parser.add_argument('--cors', help='Allow CORS PUTs for update.',
