@@ -1,6 +1,7 @@
 import json
 import time
 import urlparse
+import uuid
 
 import cyclone.web
 
@@ -10,6 +11,13 @@ from boto.dynamodb2.exceptions import (
 from cryptography.fernet import InvalidToken
 from twisted.internet.threads import deferToThread
 from twisted.python import log
+
+
+def MakeEndPoint(fernet, endpoint_url, uaid, chid):
+    """ Create an endpoint (used both by websocket handler and
+    the /register endpoint """
+    token = fernet.encrypt((uaid + ":" + chid).encode('utf8'))
+    return endpoint_url + "/push/" + token
 
 
 class EndpointHandler(cyclone.web.RequestHandler):
@@ -213,10 +221,114 @@ class EndpointHandler(cyclone.web.RequestHandler):
         self.write("Success")
         self.finish()
 
-    def write_error(self, code, exception=None):
-        """ Write the error (otherwise unhandled exception when dealing with
-        unknown method specifications.) """
-        self.set_status(code)
-        if exception is not None:
-            log.err(exception)
+
+class RegistrationHandler(cyclone.web.RequestHandler):
+
+    # connection info gauntlet
+    def validateConnect(self, connectInfo):
+        if connectInfo is None:
+            return False
+        if len(connectInfo) == 0:
+            return False
+        try:
+            info = json.loads(connectInfo)
+            if info["type"] is None:
+                return False
+        except:
+            return False
+        return True
+
+    @cyclone.web.asynchronous
+    def get(self):
+        return self.get(None)
+
+    @cyclone.web.asynchronous
+    def put(self, uaid):
+        import pdb;pdb.set_trace()
+        log.err("### here ### %s " % self.request.body);
+        self.metrics = self.settings.metrics
+        self.start_time = time.time()
+
+        self.add_header("Content-Type", "application/json")
+
+        if uaid is None:
+            uaid = str(uuid.uuid4())
+        else:
+            try:
+                uuid.UUID(uaid)
+            except ValueError:
+                log.err("Invalid UAID [%s], swapping for valid one" % uaid)
+                uaid = str(uuid.uuid4())
+
+        # Can we make this generic?
+        type = connect = None
+        if len(self.request.body) > 0:
+            body_args = urlparse.parse_qs(self.request.body,
+                                          keep_blank_values=True)
+            type = body_args.get("type")
+            connect = body_args.get("connect")
+        else:
+            type = self.request.arguments.get("type")
+            connect = self.request.arguments.get("connect")
+
+        if type is not None:
+            type = type[0]
+        if connect is not None:
+            connect = connect[0]
+
+        if type is None:
+            self.set_status(400, "No type specified")
+            return self.finish()
+
+        # If you're using the REST function, you are creating a connection.
+        if not self.validateConnect(connect):
+            self.set_status(400, "Invalid connection information specified")
+            return self.finish()
+
+        self.ping_type = type
+        self.connect = connect
+        self.transport.pauseProducing()
+
+        d = deferToThread(self.pinger.register, uaid, connect)
+        d.addCallback(self._registered)
+        d.addErrback(self._handle_overload).addErrback(self._error_response)
+
+    def _registered(self, result):
+        if not result:
+            self.set_status(500, "Registration failure")
+            return self.finish()
+        self.chid = str(uuid.uuid4())
+        d = deferToThread(MakeEndPoint,
+                          self.settings.fernet,
+                          self.uaid,
+                          self.chid,
+                          self.settings.endpoint_url)
+        d.addCallbacks(self._return_channel,
+                       self._error_response)
+
+    def _return_channel(self, endpoint):
+        self.transport.resumeProducing()
+        msg = {"useragentid": self.uaid,
+               "channelid": self.chid,
+               "endpoint": endpoint}
+        self.set_status(200)
+        self.write(json.dumps(msg))
+        return self.finish()
+
+    # error
+    def _handle_overload(self, failure):
+        self.transport.resumeProducing()
+        failure.trap(ProvisionedThroughputExceededException)
+        err = "Server busy, try again later"
+        self.set_status(503, err)
+        self.write(json.dumps({"error": err}))
         self.finish()
+
+    def _error_response(self, failure):
+        self.transport.resumeProducing()
+        log.err(failure)
+        err = "Error processing request"
+        self.set_status(500, err)
+        self.write(json.dumps({"error": err}))
+        self.finish()
+

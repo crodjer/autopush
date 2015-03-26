@@ -12,7 +12,7 @@ from twisted.python import log
 from twisted.internet import reactor, task, ssl
 from txstatsd.client import StatsDClientProtocol
 
-from autopush.endpoint import EndpointHandler
+from autopush.endpoint import (EndpointHandler, RegistrationHandler)
 from autopush.settings import AutopushSettings
 from autopush.websocket import (
     SimplePushServerProtocol,
@@ -133,11 +133,15 @@ def connection_main(sysargs=None):
     r.settings = settings
     n = NotificationHandler
     n.settings = settings
+    reg = RegistrationHandler
+    reg.settings = settings
 
     # Internal HTTP notification router
     site = cyclone.web.Application([
         (r"/push/([^\/]+)", r),
         (r"/notif/([^\/]+)", n)
+        (r"/register/([^\/]+)", reg),
+        (r"/register/", reg),
     ], default_host=settings.router_hostname)
 
     # Public websocket server
