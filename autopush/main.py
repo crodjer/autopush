@@ -1,7 +1,6 @@
 """autopush daemon script"""
 import sys
 
-import configargparse
 import cyclone.web
 from autobahn.twisted.websocket import WebSocketServerFactory, listenWS
 from twisted.internet import reactor, task, ssl
@@ -11,7 +10,7 @@ from autopush.endpoint import (EndpointHandler, RegistrationHandler)
 from autopush.health import StatusHandler
 from autopush.logging import setup_logging
 from autopush.settings import AutopushSettings
-from autopush.utils import str2bool
+from autopush.utils import ArgumentParser, str2bool
 from autopush.websocket import (
     SimplePushServerProtocol,
     RouterHandler,
@@ -118,7 +117,7 @@ def _parse_connection(sysargs=None):
         '~/.autopush_connection.ini',
         '.autopush_connection.ini'
     ]
-    parser = configargparse.ArgumentParser(
+    parser = ArgumentParser(
         description='Runs a Connection Node.',
         default_config_files=shared_config_files + config_files)
     parser.register('type', bool, str2bool)
@@ -162,7 +161,7 @@ def _parse_endpoint(sysargs=None):
         '~/.autopush_endpoint.ini',
         '.autopush_endpoint.ini'
     ]
-    parser = configargparse.ArgumentParser(
+    parser = ArgumentParser(
         description='Runs an Endpoint Node.',
         default_config_files=shared_config_files + config_files)
     parser.register('type', bool, str2bool)
