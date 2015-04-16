@@ -14,9 +14,10 @@ from twisted.python import log
 from twisted.web.client import FileBodyProducer
 
 from autopush.protocol import IgnoreBody
+from autopush.web import CORSHandler
 
 
-class EndpointHandler(cyclone.web.RequestHandler):
+class EndpointHandler(CORSHandler):
     def initialize(self):
         self.metrics = self.ap_settings.metrics
 
@@ -47,19 +48,12 @@ class EndpointHandler(cyclone.web.RequestHandler):
         self.version = version
         self.data = data
 
-    def options(self, token):
-        self._addCors()
-
-    def head(self, token):
-        self._addCors()
-
     @cyclone.web.asynchronous
     def put(self, token):
         self.start_time = time.time()
         fernet = self.ap_settings.fernet
 
         self._load_params()
-        self._addCors()
         if self.data and len(self.data) > self.ap_settings.max_data:
             self.set_status(401)
             self.write("Data too large")
@@ -68,11 +62,6 @@ class EndpointHandler(cyclone.web.RequestHandler):
         d = deferToThread(fernet.decrypt, token.encode('utf8'))
         d.addCallback(self._process_token)
         d.addErrback(self._bad_token).addErrback(self._error_response)
-
-    def _addCors(self):
-        if self.ap_settings.cors:
-            self.set_header("Access-Control-Allow-Origin", "*")
-            self.set_header("Access-Control-Allow-Methods", "PUT")
 
     def _process_token(self, result):
         self.uaid, self.chid = result.split(":")
@@ -264,8 +253,7 @@ class EndpointHandler(cyclone.web.RequestHandler):
         self.finish()
 
 
-class RegistrationHandler(cyclone.web.RequestHandler):
-
+class RegistrationHandler(CORSHandler):
     def _error_response(self, failure):
         log.err(failure)
         self.set_status(500)
@@ -299,17 +287,6 @@ class RegistrationHandler(cyclone.web.RequestHandler):
 
     def initialize(self):
         self.metrics = self.ap_settings.metrics
-
-    def options(self, token):
-        self._addCors()
-
-    def head(self, token):
-        self._addCors()
-
-    def _addCors(self):
-        if self.ap_settings.cors:
-            self.set_header("Access-Control-Allow-Origin", "*")
-            self.set_header("Access-Control-Allow-Methods", "GET,PUT")
 
     def _error(self, code, msg):
         self.set_status(code, msg)

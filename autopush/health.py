@@ -1,9 +1,8 @@
-import cyclone.web
-
 from autopush import __version__
+from autopush.web import CORSHandler
 
 
-class StatusHandler(cyclone.web.RequestHandler):
+class StatusHandler(CORSHandler):
     def get(self):
         self.write({
             "status": "OK",

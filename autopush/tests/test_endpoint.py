@@ -7,7 +7,7 @@ from boto.dynamodb2.exceptions import (
     ProvisionedThroughputExceededException,
 )
 from cryptography.fernet import Fernet, InvalidToken
-from cyclone.web import Application
+from cyclone.web import (Application, HTTPError)
 from mock import Mock, patch
 from moto import mock_dynamodb2
 from nose.tools import eq_
@@ -22,6 +22,9 @@ import autopush.endpoint as endpoint
 from autopush.db import Router, Storage
 from autopush.pinger.pinger import Pinger
 from autopush.settings import AutopushSettings
+
+
+CORS_METHODS = "GET,HEAD,POST,DELETE,PATCH,PUT,OPTIONS"
 
 
 class FileConsumer(object):
@@ -75,6 +78,7 @@ class EndpointTestCase(unittest.TestCase):
         self.endpoint = endpoint.EndpointHandler(Application(),
                                                  self.request_mock)
 
+        self.header_mock = self.endpoint.set_header = Mock()
         self.status_mock = self.endpoint.set_status = Mock()
         self.write_mock = self.endpoint.write = Mock()
 
@@ -531,21 +535,24 @@ class EndpointTestCase(unittest.TestCase):
         self._configure_agent_mock(500, IOError())
         return self._assert_jumped_client()
 
-    def test_cors(self):
+    def test_cors_disabled(self):
+        endpoint = self.endpoint
+        endpoint.ap_settings.cors = False
+
+        with self.assertRaises(HTTPError):
+            endpoint.options()
+
+        with self.assertRaises(HTTPError):
+            endpoint.head()
+
+    def test_cors_enabled(self):
         ch1 = "Access-Control-Allow-Origin"
         ch2 = "Access-Control-Allow-Methods"
         endpoint = self.endpoint
-        endpoint.ap_settings.cors = False
-        endpoint._addCors()
-        assert endpoint._headers.get(ch1) != "*"
-        assert endpoint._headers.get(ch2) != "PUT"
-
-        endpoint.clear_header(ch1)
-        endpoint.clear_header(ch2)
         endpoint.ap_settings.cors = True
-        endpoint._addCors()
-        eq_(endpoint._headers[ch1], "*")
-        eq_(endpoint._headers[ch2], "PUT")
+        endpoint.set_default_headers()
+        self.header_mock.assert_any_call(ch1, "*")
+        self.header_mock.assert_any_call(ch2, CORS_METHODS)
 
     def test_cors_head(self):
         ch1 = "Access-Control-Allow-Origin"
@@ -553,8 +560,9 @@ class EndpointTestCase(unittest.TestCase):
         endpoint = self.endpoint
         endpoint.ap_settings.cors = True
         endpoint.head(None)
-        eq_(endpoint._headers[ch1], "*")
-        eq_(endpoint._headers[ch2], "PUT")
+        endpoint.clear()
+        self.header_mock.assert_any_call(ch1, "*")
+        self.header_mock.assert_any_call(ch2, CORS_METHODS)
 
     def test_cors_options(self):
         ch1 = "Access-Control-Allow-Origin"
@@ -562,8 +570,9 @@ class EndpointTestCase(unittest.TestCase):
         endpoint = self.endpoint
         endpoint.ap_settings.cors = True
         endpoint.options(None)
-        eq_(endpoint._headers[ch1], "*")
-        eq_(endpoint._headers[ch2], "PUT")
+        endpoint.clear()
+        self.header_mock.assert_any_call(ch1, "*")
+        self.header_mock.assert_any_call(ch2, CORS_METHODS)
 
     @patch_logger
     def test_write_error(self, log_mock):
@@ -675,6 +684,7 @@ class RegistrationTestCase(unittest.TestCase):
         self.reg = endpoint.RegistrationHandler(Application(),
                                                 self.request_mock)
 
+        self.header_mock = self.reg.set_header = Mock()
         self.status_mock = self.reg.set_status = Mock()
         self.write_mock = self.reg.write = Mock()
 
@@ -726,21 +736,24 @@ class RegistrationTestCase(unittest.TestCase):
         self.reg.request.body = b'noconnect={"type":"test"}'
         self.assertTrue(not self.reg._load_params())
 
-    def test_cors(self):
+    def test_cors_disabled(self):
+        reg = self.reg
+        reg.ap_settings.cors = False
+
+        with self.assertRaises(HTTPError):
+            reg.options()
+
+        with self.assertRaises(HTTPError):
+            reg.head()
+
+    def test_cors_enabled(self):
         ch1 = "Access-Control-Allow-Origin"
         ch2 = "Access-Control-Allow-Methods"
         reg = self.reg
-        reg.ap_settings.cors = False
-        reg._addCors()
-        assert reg._headers.get(ch1) != "*"
-        assert reg._headers.get(ch2) != "GET,PUT"
-
-        reg.clear_header(ch1)
-        reg.clear_header(ch2)
         reg.ap_settings.cors = True
-        reg._addCors()
-        eq_(reg._headers[ch1], "*")
-        eq_(reg._headers[ch2], "GET,PUT")
+        reg.set_default_headers()
+        self.header_mock.assert_any_call(ch1, "*")
+        self.header_mock.assert_any_call(ch2, CORS_METHODS)
 
     def test_cors_head(self):
         ch1 = "Access-Control-Allow-Origin"
@@ -748,8 +761,9 @@ class RegistrationTestCase(unittest.TestCase):
         reg = self.reg
         reg.ap_settings.cors = True
         reg.head(None)
-        eq_(reg._headers[ch1], "*")
-        eq_(reg._headers[ch2], "GET,PUT")
+        reg.clear()
+        self.header_mock.assert_any_call(ch1, "*")
+        self.header_mock.assert_any_call(ch2, CORS_METHODS)
 
     def test_cors_options(self):
         ch1 = "Access-Control-Allow-Origin"
@@ -757,8 +771,9 @@ class RegistrationTestCase(unittest.TestCase):
         reg = self.reg
         reg.ap_settings.cors = True
         reg.options(None)
-        eq_(reg._headers[ch1], "*")
-        eq_(reg._headers[ch2], "GET,PUT")
+        reg.clear()
+        self.header_mock.assert_any_call(ch1, "*")
+        self.header_mock.assert_any_call(ch2, CORS_METHODS)
 
     @patch('uuid.uuid4', return_value=dummy_chid)
     def test_get_valid(self, arg):
